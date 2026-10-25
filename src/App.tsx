@@ -1,3 +1,4 @@
+import { Cover } from "./components/Cover";
 import { useEffect, useRef, useState } from "react";
 import {
   templates,
@@ -116,7 +117,7 @@ export function App() {
       setSelected("");
       setMessage("Project loaded.");
     } catch {
-      setMessage("This file is not a valid EconGraph Pro version 1 project.");
+      setMessage("This file is not a valid Ceteris version 1 project.");
     }
     if (file.current) file.current.value = "";
   }
@@ -131,42 +132,19 @@ export function App() {
   );
   if (!editor)
     return (
-      <main className="home">
+      <>
         {hiddenFile}
-        <header className="home-header">
-          <h1>EconGraph Pro</h1>
-          <p>Select a diagram type</p>
-          <span>Available options: {templates.length}</span>
-        </header>
-        <div className="cards">
-          {templates.map((t) => (
-            <button
-              className="template"
-              key={t.id}
-              onClick={() => {
-                change(preset(t.id));
-                setEditor(true);
-                setSelected("");
-              }}
-            >
-              <h2>{t.name}</h2>
-              <p>{t.description}</p>
-            </button>
-          ))}
-        </div>
-        <footer>
-          <button className="text-button" onClick={() => setEditor(true)}>
-            Continue saved diagram →
-          </button>
-          <button className="text-button" onClick={() => file.current?.click()}>
-            Open project
-          </button>
-          <p>
-            Made for clear economic thinking. Your work stays in your browser.
-          </p>
-          {message && <p role="status">{message}</p>}
-        </footer>
-      </main>
+        <Cover
+          onChoose={(id) => {
+            change(preset(id));
+            setEditor(true);
+            setSelected("");
+          }}
+          onResume={() => setEditor(true)}
+          onOpen={() => file.current?.click()}
+          message={message}
+        />
+      </>
     );
   return (
     <main className="app">
@@ -174,7 +152,7 @@ export function App() {
       <header className="toolbar">
         <button onClick={() => setEditor(false)}>← All diagrams</button>
         <strong>
-          EconGraph Pro{" "}
+          Ceteris{" "}
           <span>/ {templates.find((t) => t.id === p.template)?.name}</span>
         </strong>
         <div className="toolbar-actions">
@@ -190,7 +168,7 @@ export function App() {
                 new Blob([JSON.stringify(p, null, 2)], {
                   type: "application/json",
                 }),
-                "econgraph-project.json",
+                "ceteris-project.json",
               )
             }
           >
@@ -393,6 +371,51 @@ export function App() {
               intercepts. Area values use model units.
             </p>
           </Section>
+          {p.template === "trade" && (
+            <Section title="International trade" open>
+              <Select
+                label="Trade scenario"
+                value={p.tradeMode}
+                options={[
+                  { value: "free", label: "Free trade" },
+                  { value: "tariff", label: "Import tariff" },
+                  { value: "quota", label: "Import quota" },
+                ]}
+                onChange={(tradeMode) =>
+                  patch({ tradeMode: tradeMode as Project["tradeMode"] })
+                }
+              />
+              <Range
+                label="World price"
+                value={p.worldPrice}
+                min={0}
+                max={150}
+                onChange={(worldPrice) => patch({ worldPrice })}
+              />
+              {p.tradeMode === "tariff" && (
+                <Range
+                  label="Per-unit tariff"
+                  value={p.tariff}
+                  min={0}
+                  max={150}
+                  onChange={(tariff) => patch({ tariff })}
+                />
+              )}
+              {p.tradeMode === "quota" && (
+                <Range
+                  label="Import quota"
+                  value={p.quota}
+                  min={0}
+                  max={150}
+                  onChange={(quota) => patch({ quota })}
+                />
+              )}
+              <p className="small">
+                A small country takes the world price as given. Tariffs and
+                quotas apply to imports. Quota rents belong to licence holders.
+              </p>
+            </Section>
+          )}
           <Section title="Axes and labels" open>
             <Text
               label="Horizontal-axis title"

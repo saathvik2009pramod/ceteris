@@ -216,6 +216,100 @@ export function build(p: Project) {
       const ce = intersect(D, corrected)!;
       point("corrected", ce.x, ce.y, "Eᶜ", undefined, "Pᶜ");
     }
+  } else if (p.template === "trade") {
+    const pw = p.worldPrice,
+      pe = e.y;
+    curves.push({ id: "world", a: pw, b: 0, label: "Pw", color: "#6B7263" });
+    const qs = Math.max(0, (pw - p.c) / p.d),
+      qd = Math.max(0, (p.a - pw) / p.b);
+    point("free-s", qs, pw, "", "Qₛ", "Pw");
+    point("free-d", qd, pw, "", "Qd");
+    const imports = Math.max(0, qd - qs),
+      exports = Math.max(0, qs - qd);
+    notes.push(
+      `Free trade: ${imports > 0 ? "imports " + imports.toFixed(2) : exports > 0 ? "exports " + exports.toFixed(2) : "no trade"} model units.`,
+    );
+    if (p.tradeMode !== "free" && imports <= 0) {
+      notes.push(
+        "Import protection does not bind in an exporting or no-trade market.",
+      );
+    } else if (p.tradeMode !== "free") {
+      // Small price-taking economy. A prohibitive restriction cannot raise price above autarky.
+      const quotaPrice =
+        p.a - p.b * p.quota <= p.c
+          ? p.a - p.b * p.quota
+          : (p.a / p.b + p.c / p.d - p.quota) / (1 / p.b + 1 / p.d);
+      const domestic =
+        p.tradeMode === "tariff"
+          ? Math.min(pe, pw + p.tariff)
+          : Math.max(pw, Math.min(pe, quotaPrice));
+      const s2 = Math.max(0, (domestic - p.c) / p.d),
+        d2 = Math.max(0, (p.a - domestic) / p.b),
+        remaining = Math.max(0, d2 - s2),
+        wedge = domestic - pw;
+      if (wedge > 1e-8) {
+        curves.push({
+          id: "trade-policy",
+          a: domestic,
+          b: 0,
+          label: p.tradeMode === "tariff" ? "Pw + t" : "P quota",
+          color: "#973F35",
+        });
+        point("protected-s", s2, domestic, "", "Qₛ₂", "P₂");
+        point("protected-d", d2, domestic, "", "Qd₂");
+        if (remaining > 1e-8)
+          region(
+            "trade-revenue",
+            p.tradeMode === "tariff" ? "Tariff revenue" : "Quota rents",
+            [
+              [s2, pw],
+              [d2, pw],
+              [d2, domestic],
+              [s2, domestic],
+            ],
+            "#71816B",
+          );
+        if (s2 > qs)
+          region(
+            "production-loss",
+            "Production loss",
+            [
+              [qs, pw],
+              [s2, pw],
+              [s2, domestic],
+              [qs, Math.max(pw, p.c)],
+            ],
+            "#BD8B56",
+          );
+        region(
+          "consumption-loss",
+          "Consumption loss",
+          [
+            [d2, pw],
+            [qd, pw],
+            [d2, domestic],
+          ],
+          "#973F35",
+        );
+        notes.push(
+          `Protected price: ${domestic.toFixed(2)} · Imports: ${remaining.toFixed(2)} · ${p.tradeMode === "tariff" ? "Tariff revenue" : "Quota rents"}: ${(remaining * wedge).toFixed(2)}.`,
+        );
+        if (remaining < 1e-8)
+          notes.push(
+            "Prohibitive restriction: imports fall to zero and the domestic price reaches autarky.",
+          );
+      } else
+        notes.push(
+          "Non-binding restriction: domestic price and imports remain at free-trade levels.",
+        );
+      if (p.tradeMode === "quota")
+        notes.push(
+          "Quota rents accrue to licence holders; they are government revenue only if the licences are auctioned.",
+        );
+    }
+    notes.push(
+      "Small-country model: a fixed world price, competitive domestic markets and no transport costs.",
+    );
   } else if (p.template === "control") {
     curves.push({
       id: "control",

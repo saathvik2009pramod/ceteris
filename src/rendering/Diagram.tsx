@@ -375,6 +375,34 @@ export function Diagram({
             </g>
           );
         })()}
+      {p.template === "trade" &&
+        (() => {
+          const protectedTrade = m.points.some((x) => x.id === "protected-s");
+          const a = m.points.find(
+            (x) => x.id === (protectedTrade ? "protected-s" : "free-s"),
+          );
+          const b = m.points.find(
+            (x) => x.id === (protectedTrade ? "protected-d" : "free-d"),
+          );
+          if (!a || !b || !valid(a) || !valid(b) || Math.abs(a.x - b.x) < 1e-8)
+            return null;
+          const yy = sy(a.y) + 28;
+          return (
+            <g stroke="#59634e" fill="none">
+              <path d={`M${sx(a.x)},${yy - 6}v6H${sx(b.x)}v-6`} />
+              {label(
+                "trade-bracket",
+                a.x < b.x ? "Imports" : "Exports",
+                (sx(a.x) + sx(b.x)) / 2,
+                yy + 18,
+                "middle",
+                "#59634e",
+                0,
+                14,
+              )}
+            </g>
+          );
+        })()}
       {p.items
         .filter((it) => it.visible)
         .map((it) => {

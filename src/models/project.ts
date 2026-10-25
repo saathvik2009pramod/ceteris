@@ -4,37 +4,42 @@ export const templates = [
     id: "market",
     name: "Supply and Demand",
     description:
-      "Explore equilibrium, curve shifts and changing market conditions.",
+      "Start with a market. Shift demand or supply and follow the new equilibrium.",
   },
   {
     id: "tax",
     name: "Indirect Tax",
     description:
-      "Illustrate tax incidence, government revenue and welfare loss.",
+      "Place a wedge between buyers and sellers. See who bears the cost.",
   },
   {
     id: "subsidy",
     name: "Subsidy",
     description:
-      "Show consumer benefits, producer receipts and government expenditure.",
+      "Lower the price buyers pay and trace the cost to the government.",
   },
   {
     id: "externality",
     name: "Externalities",
     description:
-      "Compare private and social costs and benefits across four cases.",
+      "Bring the costs and benefits outside a transaction into the picture.",
   },
   {
     id: "control",
     name: "Price Controls",
     description:
-      "Explore binding price ceilings, price floors, shortages and surpluses.",
+      "Set a ceiling or a floor. Locate the shortage or surplus it creates.",
   },
   {
     id: "surplus",
     name: "Consumer & Producer Surplus",
+    description: "Shade the gains on either side of a market exchange.",
+  },
+  {
+    id: "trade",
+    name: "International Trade",
     description:
-      "Visualise the gains from trade with customisable welfare regions.",
+      "Follow a world price through domestic production, imports and protection.",
   },
 ] as const;
 const n = z.number().finite();
@@ -89,7 +94,12 @@ export const projectSchema = z.object({
     "externality",
     "control",
     "surplus",
+    "trade",
   ]),
+  worldPrice: n.min(0).max(300).default(30),
+  tariff: n.min(0).max(150).default(8),
+  quota: n.min(0).max(500).default(20),
+  tradeMode: z.enum(["free", "tariff", "quota"]).default("free"),
   title: short,
   xTitle: short,
   yTitle: short,
@@ -145,6 +155,10 @@ export type Project = z.infer<typeof projectSchema>;
 export function preset(template: Project["template"] = "market"): Project {
   return {
     version: 1,
+    worldPrice: 30,
+    tariff: 8,
+    quota: 20,
+    tradeMode: "free",
     template,
     title: templates.find((t) => t.id === template)!.name,
     xTitle: "Quantity",
