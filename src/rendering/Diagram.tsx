@@ -266,17 +266,15 @@ export function Diagram({
         const o = p.curves[c.id] || {},
           ends = clipCurve(c, p.xMax, p.yMax);
         if (o.hidden || ends.length < 2) return null;
-        const first = ends[0],
-          last = ends[ends.length - 1],
+        const last = ends[ends.length - 1],
           color = p.monochrome ? "#111" : o.color || c.color;
         return (
           <g key={c.id}>
-            <line
+            <polyline
               data-curve={c.id}
-              x1={sx(first[0])}
-              y1={sy(first[1])}
-              x2={sx(last[0])}
-              y2={sy(last[1])}
+              points={poly(ends)}
+              fill="none"
+              strokeLinejoin="round"
               stroke={color}
               strokeWidth={o.width || p.line}
               strokeDasharray={
@@ -286,8 +284,10 @@ export function Diagram({
             {label(
               "curve-" + c.id,
               (o.label ?? c.label) +
-                (o.equation
-                  ? ` (${c.a.toFixed(1)} ${c.b < 0 ? "−" : "+"} ${Math.abs(c.b).toFixed(2)}Q)`
+                (o.equation && !c.path
+                  ? c.vertical !== undefined
+                    ? ` (${p.template === "money" ? "M" : "Y"} = ${c.vertical.toFixed(1)})`
+                    : ` (${c.a.toFixed(1)} ${c.b < 0 ? "−" : "+"} ${Math.abs(c.b).toFixed(2)}${p.template === "adas" ? "Y" : p.template === "money" ? "M" : "Q"})`
                   : ""),
               sx(last[0]) + 9,
               sy(last[1]) - 8,

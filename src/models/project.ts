@@ -41,7 +41,18 @@ export const templates = [
     description:
       "Follow a world price through domestic production, imports and protection.",
   },
+  { id: "ppc", name: "Production Possibilities Curve (PPC)", description: "" },
+  { id: "adas", name: "AD/AS", description: "" },
+  { id: "money", name: "Money Market", description: "" },
 ] as const;
+export const coverTemplates = [
+  "market",
+  "externality",
+  "ppc",
+  "adas",
+  "money",
+  "trade",
+].map((id) => templates.find((t) => t.id === id)!);
 const n = z.number().finite();
 const short = z.string().max(500);
 const color = z.string().regex(/^#[0-9a-f]{6}$/i);
@@ -95,7 +106,21 @@ export const projectSchema = z.object({
     "control",
     "surplus",
     "trade",
+    "ppc",
+    "adas",
+    "money",
   ]),
+  adasModel: z.enum(["keynesian", "monetarist"]).default("monetarist"),
+  fullEmployment: n.min(10).max(300).default(80),
+  keynesianFloor: n.min(1).max(150).default(20),
+  keynesianKnee: n.min(0.1).max(0.9).default(0.6),
+  keynesianRise: n.min(5).max(200).default(60),
+  moneySupply: n.min(1).max(300).default(55),
+  ppcShape: z.enum(["bowed", "straight"]).default("bowed"),
+  capacityX: n.min(10).max(300).default(90),
+  capacityY: n.min(10).max(300).default(90),
+  productionShare: n.min(0).max(1).default(0.6),
+  ppcGrowth: n.min(-80).max(100).default(20),
   worldPrice: n.min(0).max(300).default(30),
   tariff: n.min(0).max(150).default(8),
   quota: n.min(0).max(500).default(20),
@@ -147,6 +172,12 @@ export const projectSchema = z.object({
         a: n.min(-300).max(300),
         b: n.min(-5).max(5),
         label: short,
+        path: z
+          .array(z.tuple([n, n]))
+          .min(2)
+          .max(1000)
+          .optional(),
+        vertical: n.optional(),
       }),
     )
     .max(20),
@@ -155,21 +186,48 @@ export type Project = z.infer<typeof projectSchema>;
 export function preset(template: Project["template"] = "market"): Project {
   return {
     version: 1,
+    adasModel: "monetarist",
+    fullEmployment: 80,
+    keynesianFloor: 20,
+    keynesianKnee: 0.6,
+    keynesianRise: 60,
+    moneySupply: 55,
+    ppcShape: "bowed",
+    capacityX: 90,
+    capacityY: 90,
+    productionShare: 0.6,
+    ppcGrowth: 20,
     worldPrice: 30,
     tariff: 8,
     quota: 20,
     tradeMode: "free",
     template,
     title: templates.find((t) => t.id === template)!.name,
-    xTitle: "Quantity",
-    yTitle: template === "externality" ? "Price / costs / benefits" : "Price",
+    xTitle:
+      template === "ppc"
+        ? "Good X"
+        : template === "money"
+          ? "Quantity of Money"
+          : template === "adas"
+            ? "Real Output"
+            : "Quantity",
+    yTitle:
+      template === "ppc"
+        ? "Good Y"
+        : template === "money"
+          ? "Interest Rate (%)"
+          : template === "adas"
+            ? "Price Level"
+            : template === "externality"
+              ? "Price / Costs / Benefits"
+              : "Price",
     origin: "O",
     a: 90,
-    b: 0.8,
+    b: template === "adas" ? 0.6 : 0.8,
     c: 10,
-    d: 0.6,
-    shiftD: 15,
-    shiftS: 0,
+    d: template === "adas" ? 0.4 : 0.6,
+    shiftD: template === "money" ? 0 : 15,
+    shiftS: template === "money" ? 10 : 0,
     showShift: false,
     amount: 18,
     externality: "negative-production",
@@ -187,7 +245,9 @@ export function preset(template: Project["template"] = "market"): Project {
     line: 2.5,
     opacity: 0.2,
     projection: true,
-    shade: template !== "market" && template !== "control",
+    shade: ["tax", "subsidy", "externality", "surplus", "trade"].includes(
+      template,
+    ),
     monochrome: false,
     fontFamily: "Arial",
     transparent: false,

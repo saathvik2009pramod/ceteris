@@ -1,4 +1,4 @@
-import { templates, type Project } from "../models/project";
+import { coverTemplates, type Project } from "../models/project";
 
 export function Cover({
   onChoose,
@@ -14,7 +14,7 @@ export function Cover({
         <h1>Ceteris</h1>
       </header>
       <nav className="diagram-choices" aria-label="Choose a diagram">
-        {templates.map((template) => (
+        {coverTemplates.map((template) => (
           <button key={template.id} onClick={() => onChoose(template.id)}>
             {template.name}
           </button>

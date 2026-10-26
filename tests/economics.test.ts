@@ -150,3 +150,154 @@ test("quota also solves the zero-domestic-supply boundary", () => {
   close(a.x, 0);
   close(b.x - a.x, 102);
 });
+
+test("chooser contains exactly the six requested diagrams in order", async () => {
+  const { coverTemplates } = await import("../src/models/project.ts");
+  assert.deepEqual(
+    coverTemplates.map((t) => t.id),
+    ["market", "externality", "ppc", "adas", "money", "trade"],
+  );
+});
+test("PPC endpoints, opportunity costs and growth are consistent", () => {
+  for (const ppcShape of ["bowed", "straight"] as const) {
+    const p = { ...preset("ppc"), ppcShape, showShift: true };
+    const m = build(p),
+      path = m.curves[0].path!;
+    close(path[0][0], 0);
+    close(path[0][1], p.capacityY);
+    close(path.at(-1)![0], p.capacityX);
+    close(path.at(-1)![1], 0);
+    const a = m.points[0],
+      b = m.points[1];
+    close(b.x / a.x, 1.2);
+    close(b.y / a.y, 1.2);
+    if (ppcShape === "bowed") {
+      assert.ok(
+        Math.abs((a.x / p.capacityX) ** 2 + (a.y / p.capacityY) ** 2 - 1) <
+          0.0001,
+      );
+      const slope = (i: number) =>
+        Math.abs((path[i + 1][1] - path[i][1]) / (path[i + 1][0] - path[i][0]));
+      assert.ok(slope(90) > slope(30));
+    } else close(a.x / p.capacityX + a.y / p.capacityY, 1);
+  }
+});
+test("money supply is vertical and an expansion lowers interest rates", () => {
+  const p = { ...preset("money"), showShift: true },
+    m = build(p);
+  close(
+    m.curves.find((c) => c.id === "money-supply")!.vertical!,
+    p.moneySupply,
+  );
+  const [e, e2] = m.points;
+  close(e.x, p.moneySupply);
+  close(e.y, p.a - p.b * e.x);
+  close(e2.x, p.moneySupply + p.shiftS);
+  assert.ok(e2.y < e.y);
+  const constrained = resolveItem(
+    { ...newItem("point"), curve: "money-supply", x: 2, y: 31 },
+    m,
+  )!;
+  close(constrained.x, p.moneySupply);
+  close(constrained.y, 31);
+});
+test("monetarist short-run equilibrium solves AD and SRAS with separate LRAS", () => {
+  const p = { ...preset("adas"), showShift: true, shiftS: 5 },
+    m = build(p);
+  const [e, e2] = m.points;
+  close(e.y, p.a - p.b * e.x);
+  close(e.y, p.c + p.d * e.x);
+  close(e2.y, p.a + p.shiftD - p.b * e2.x);
+  close(e2.y, p.c + p.shiftS + p.d * e2.x);
+  close(m.curves.find((c) => c.id === "lras")!.vertical!, p.fullEmployment);
+});
+test("Keynesian equilibrium follows horizontal, rising and vertical AS sections", () => {
+  const p = { ...preset("adas"), adasModel: "keynesian" as const };
+  for (const a of [40, 90, 160]) {
+    const m = build({ ...p, a }),
+      e = m.points[0];
+    close(e.y, a - p.b * e.x);
+    assert.ok(!m.curves.some((c) => c.id === "lras"));
+    if (a === 40) {
+      close(e.y, p.keynesianFloor);
+      assert.ok(e.x < p.fullEmployment * p.keynesianKnee);
+    }
+    if (a === 90) {
+      assert.ok(
+        e.x > p.fullEmployment * p.keynesianKnee && e.x < p.fullEmployment,
+      );
+      close(
+        e.y,
+        p.keynesianFloor +
+          (p.keynesianRise * (e.x - p.fullEmployment * p.keynesianKnee)) /
+            (p.fullEmployment * (1 - p.keynesianKnee)),
+      );
+    }
+    if (a === 160) close(e.x, p.fullEmployment);
+  }
+});
+test("Keynesian supply and demand shifts recompute the intersection", () => {
+  const p = {
+    ...preset("adas"),
+    adasModel: "keynesian" as const,
+    showShift: true,
+    shiftD: 20,
+    shiftS: 10,
+  };
+  const m = build(p),
+    e = m.points[1];
+  close(e.y, p.a + p.shiftD - p.b * e.x);
+  close(
+    e.y,
+    p.keynesianFloor +
+      p.shiftS +
+      (p.keynesianRise * (e.x - p.fullEmployment * p.keynesianKnee)) /
+        (p.fullEmployment * (1 - p.keynesianKnee)),
+  );
+});
+test("vertical and piecewise curves clip to the plot without invalid coordinates", async () => {
+  const { clipCurve } = await import("../src/engine/economics.ts");
+  for (const p of [
+    preset("ppc"),
+    preset("money"),
+    { ...preset("adas"), adasModel: "keynesian" as const },
+  ]) {
+    for (const c of build(p).curves) {
+      const path = clipCurve(c, 50, 50);
+      assert.ok(
+        path.every(
+          (pt) =>
+            pt.every(Number.isFinite) &&
+            pt[0] >= -1e-8 &&
+            pt[0] <= 50 + 1e-8 &&
+            pt[1] >= -1e-8 &&
+            pt[1] <= 50 + 1e-8,
+        ),
+      );
+    }
+  }
+});
+test("new model settings round-trip and old saves receive their defaults", () => {
+  for (const template of ["ppc", "money", "adas"] as const) {
+    const p = preset(template);
+    assert.deepEqual(parseProject(JSON.stringify(p)), p);
+  }
+  const p: any = preset();
+  for (const k of [
+    "adasModel",
+    "fullEmployment",
+    "keynesianFloor",
+    "keynesianKnee",
+    "keynesianRise",
+    "moneySupply",
+    "ppcShape",
+    "capacityX",
+    "capacityY",
+    "productionShare",
+    "ppcGrowth",
+  ])
+    delete p[k];
+  const restored = parseProject(JSON.stringify(p));
+  assert.equal(restored.adasModel, "monetarist");
+  assert.equal(restored.ppcShape, "bowed");
+});

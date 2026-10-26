@@ -1,3 +1,4 @@
+import { ModelControls } from "./components/ModelControls";
 import { Cover } from "./components/Cover";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -115,9 +116,11 @@ export function App() {
       change(data);
       setEditor(true);
       setSelected("");
-      setMessage("Project loaded.");
+      setMessage("project loaded.");
     } catch {
-      setMessage("This file is not a valid Ceteris version 1 project.");
+      setMessage(
+        "this file could not be opened. choose a project saved from ceteris.",
+      );
     }
     if (file.current) file.current.value = "";
   }
@@ -188,7 +191,7 @@ export function App() {
       <div className="editor-shell">
         <section className="workspace">
           <div className="canvas-tools">
-            <span>DIAGRAM PREVIEW</span>
+            <span>Diagram preview</span>
             <div>
               <button
                 aria-label="Zoom out"
@@ -220,8 +223,8 @@ export function App() {
             </div>
           </div>
           <p className="hint">
-            Drag any label to position it. Select a label for precise controls.
-            Shift + arrow keys moves it faster.
+            drag a label to move it, or select it for precise controls. hold
+            shift while using the arrow keys to move it faster.
           </p>
           {[...m.warnings, ...m.notes, storageError]
             .filter(Boolean)
@@ -230,7 +233,7 @@ export function App() {
                 className={m.warnings.includes(v) ? "notice warning" : "notice"}
                 key={i}
               >
-                {v}
+                {v.toLowerCase()}
               </p>
             ))}
         </section>
@@ -250,127 +253,167 @@ export function App() {
               }
             />
           </Section>
-          <Section title="Model and shifts" open>
-            <div className="two-col">
-              <Range
-                label="Demand intercept"
-                value={p.a}
-                min={1}
-                max={300}
-                onChange={(a) => patch({ a })}
-              />
-              <Range
-                label="Supply intercept"
-                value={p.c}
-                min={0}
-                max={200}
-                onChange={(c) => patch({ c })}
-              />
-              <Num
-                label="Demand slope magnitude"
-                value={p.b}
-                min={0.05}
-                max={5}
-                step={0.05}
-                onChange={(b) => patch({ b })}
-              />
-              <Num
-                label="Supply slope"
-                value={p.d}
-                min={0.05}
-                max={5}
-                step={0.05}
-                onChange={(d) => patch({ d })}
-              />
-            </div>
-            {(p.template === "market" || p.template === "surplus") && (
-              <>
-                <Toggle
-                  label="Show shifted curves and second equilibrium"
-                  value={p.showShift}
-                  onChange={(showShift) => patch({ showShift })}
-                />
-                {p.showShift && (
-                  <div className="two-col">
-                    <Range
-                      label="Demand shift"
-                      value={p.shiftD}
-                      min={-100}
-                      max={100}
-                      onChange={(shiftD) => patch({ shiftD })}
-                    />
-                    <Range
-                      label="Supply shift"
-                      value={p.shiftS}
-                      min={-100}
-                      max={100}
-                      onChange={(shiftS) => patch({ shiftS })}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-            {["tax", "subsidy", "externality"].includes(p.template) && (
-              <Range
-                label={
-                  p.template === "externality"
-                    ? "Marginal external cost / benefit"
-                    : "Per-unit " + p.template
-                }
-                value={p.amount}
-                min={0}
-                max={150}
-                onChange={(amount) => patch({ amount })}
-              />
-            )}
-            {p.template === "externality" && (
-              <>
+          <ModelControls p={p} patch={patch} />
+          {!["ppc", "money", "adas"].includes(p.template) && (
+            <Section title="Model and shifts" open>
+              {["market", "tax", "subsidy", "control", "surplus"].includes(
+                p.template,
+              ) && (
                 <Select
-                  label="Externality type"
-                  value={p.externality}
-                  onChange={(externality) =>
-                    patch({
-                      externality: externality as Project["externality"],
-                    })
-                  }
+                  label="Market scenario"
+                  value={p.template === "control" ? p.control : p.template}
                   options={[
-                    "negative-production",
-                    "positive-production",
-                    "negative-consumption",
-                    "positive-consumption",
-                  ].map((v) => ({ value: v, label: v.replace("-", " ") }))}
+                    { value: "market", label: "Supply and Demand" },
+                    { value: "ceiling", label: "Price Ceiling" },
+                    { value: "floor", label: "Price Floor" },
+                    { value: "tax", label: "Indirect Tax" },
+                    { value: "subsidy", label: "Subsidy" },
+                    {
+                      value: "surplus",
+                      label: "Consumer and Producer Surplus",
+                    },
+                  ]}
+                  onChange={(v) => {
+                    const control = v === "ceiling" || v === "floor";
+                    const template = (
+                      control ? "control" : v
+                    ) as Project["template"];
+                    patch({
+                      template,
+                      title: control
+                        ? v === "ceiling"
+                          ? "Price Ceiling"
+                          : "Price Floor"
+                        : templates.find((t) => t.id === template)!.name,
+                      ...(control
+                        ? {
+                            control: v as Project["control"],
+                            price: v === "ceiling" ? 35 : 65,
+                          }
+                        : {}),
+                      shade: ["tax", "subsidy", "surplus"].includes(template),
+                      labels: {
+                        ...p.labels,
+                        title: { ...p.labels.title, text: undefined },
+                      },
+                    });
+                    setSelected("");
+                  }}
                 />
-                <Toggle
-                  label="Show corrective tax / subsidy"
-                  value={p.correction}
-                  onChange={(correction) => patch({ correction })}
-                />
-              </>
-            )}
-            {p.template === "control" && (
-              <>
-                <Select
-                  label="Control"
-                  value={p.control}
-                  options={["ceiling", "floor"]}
-                  onChange={(control) =>
-                    patch({ control: control as Project["control"] })
-                  }
+              )}
+              <div className="two-col">
+                <Range
+                  label="Demand intercept"
+                  value={p.a}
+                  min={1}
+                  max={300}
+                  onChange={(a) => patch({ a })}
                 />
                 <Range
-                  label="Controlled price"
-                  value={p.price}
+                  label="Supply intercept"
+                  value={p.c}
                   min={0}
-                  max={300}
-                  onChange={(price) => patch({ price })}
+                  max={200}
+                  onChange={(c) => patch({ c })}
                 />
-              </>
-            )}
-            <p className="small">
-              Linear models: P = a − bQ and P = c + dQ. Shifts change
-              intercepts. Area values use model units.
-            </p>
-          </Section>
+                <Num
+                  label="Demand slope magnitude"
+                  value={p.b}
+                  min={0.05}
+                  max={5}
+                  step={0.05}
+                  onChange={(b) => patch({ b })}
+                />
+                <Num
+                  label="Supply slope"
+                  value={p.d}
+                  min={0.05}
+                  max={5}
+                  step={0.05}
+                  onChange={(d) => patch({ d })}
+                />
+              </div>
+              {(p.template === "market" || p.template === "surplus") && (
+                <>
+                  <Toggle
+                    label="show shifted curves and second equilibrium"
+                    value={p.showShift}
+                    onChange={(showShift) => patch({ showShift })}
+                  />
+                  {p.showShift && (
+                    <div className="two-col">
+                      <Range
+                        label="Demand shift"
+                        value={p.shiftD}
+                        min={-100}
+                        max={100}
+                        onChange={(shiftD) => patch({ shiftD })}
+                      />
+                      <Range
+                        label="Supply shift"
+                        value={p.shiftS}
+                        min={-100}
+                        max={100}
+                        onChange={(shiftS) => patch({ shiftS })}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+              {["tax", "subsidy", "externality"].includes(p.template) && (
+                <Range
+                  label={
+                    p.template === "externality"
+                      ? "Marginal external cost / benefit"
+                      : "Per-unit " + p.template
+                  }
+                  value={p.amount}
+                  min={0}
+                  max={150}
+                  onChange={(amount) => patch({ amount })}
+                />
+              )}
+              {p.template === "externality" && (
+                <>
+                  <Select
+                    label="Externality type"
+                    value={p.externality}
+                    onChange={(externality) =>
+                      patch({
+                        externality: externality as Project["externality"],
+                      })
+                    }
+                    options={[
+                      "negative-production",
+                      "positive-production",
+                      "negative-consumption",
+                      "positive-consumption",
+                    ].map((v) => ({ value: v, label: v.replace("-", " ") }))}
+                  />
+                  <Toggle
+                    label="show corrective tax / subsidy"
+                    value={p.correction}
+                    onChange={(correction) => patch({ correction })}
+                  />
+                </>
+              )}
+              {p.template === "control" && (
+                <>
+                  <Range
+                    label="Controlled price"
+                    value={p.price}
+                    min={0}
+                    max={300}
+                    onChange={(price) => patch({ price })}
+                  />
+                </>
+              )}
+              <p className="small">
+                adjust the intercepts to move the curves. shaded areas use the
+                same units as the model.
+              </p>
+            </Section>
+          )}
           {p.template === "trade" && (
             <Section title="International trade" open>
               <Select
@@ -411,8 +454,8 @@ export function App() {
                 />
               )}
               <p className="small">
-                A small country takes the world price as given. Tariffs and
-                quotas apply to imports. Quota rents belong to licence holders.
+                the world price is fixed in this small-country model. tariffs
+                and quotas apply to imports; quota rents go to licence holders.
               </p>
             </Section>
           )}
@@ -472,34 +515,34 @@ export function App() {
               />
             </div>
             <Toggle
-              label="Show numerical ticks"
+              label="show numerical ticks"
               value={p.ticks}
               onChange={(ticks) => patch({ ticks })}
             />
             <Toggle
-              label="Show grid"
+              label="show grid"
               value={p.grid}
               onChange={(grid) => patch({ grid })}
             />
             <Toggle
-              label="Rotate vertical-axis title"
+              label="rotate vertical-axis title"
               value={p.rotateY}
               onChange={(rotateY) => patch({ rotateY })}
             />
             <Toggle
-              label="Show axis arrowheads"
+              label="show axis arrowheads"
               value={p.arrows}
               onChange={(arrows) => patch({ arrows })}
             />
             <Toggle
-              label="Show equilibrium projections"
+              label="show equilibrium projections"
               value={p.projection}
               onChange={(projection) => patch({ projection })}
             />
             <h3>Linked axis points</h3>
             <p className="small">
-              These follow the model automatically. Select a row to adjust text
-              and positioning.
+              these labels follow the model. select a row to change its text or
+              position.
             </p>
             {m.axis.map((a) => (
               <div
@@ -515,7 +558,7 @@ export function App() {
                   onChange={(e) => editLabel(a.id, { text: e.target.value })}
                 />
                 <button
-                  title="Hide or show label"
+                  title="hide or show label"
                   onClick={() =>
                     editLabel(a.id, { hidden: !p.labels[a.id]?.hidden })
                   }
@@ -523,7 +566,7 @@ export function App() {
                   {p.labels[a.id]?.hidden ? "Show" : "Hide"}
                 </button>
                 <button
-                  title="Convert to a manually positioned axis point"
+                  title="convert to a manually positioned axis point"
                   onClick={() => {
                     const it = {
                       ...newItem("axis"),
@@ -630,7 +673,7 @@ export function App() {
                       />
                     )}
                     <Select
-                      label="Link to calculated point"
+                      label="link to calculated point"
                       value={i.link}
                       options={[
                         { value: "", label: "Manual" },
@@ -650,7 +693,7 @@ export function App() {
                     />
                     {!i.link && i.kind === "point" && (
                       <Select
-                        label="Constrain to curve"
+                        label="constrain to curve"
                         value={i.curve}
                         options={[
                           { value: "", label: "Free point" },
@@ -673,15 +716,19 @@ export function App() {
                             onChange={(x) => editItem(i.id, { x })}
                           />
                         )}
-                        {!i.curve && (i.kind !== "axis" || i.axis === "y") && (
-                          <Num
-                            label="Y coordinate"
-                            value={i.y}
-                            min={0}
-                            max={p.yMax}
-                            onChange={(y) => editItem(i.id, { y })}
-                          />
-                        )}
+                        {(!i.curve ||
+                          m.curves.find((c) => c.id === i.curve)?.vertical !==
+                            undefined ||
+                          !!m.curves.find((c) => c.id === i.curve)?.path) &&
+                          (i.kind !== "axis" || i.axis === "y") && (
+                            <Num
+                              label="Y coordinate"
+                              value={i.y}
+                              min={0}
+                              max={p.yMax}
+                              onChange={(y) => editItem(i.id, { y })}
+                            />
+                          )}
                       </div>
                     )}
                     <div className="two-col">
@@ -740,7 +787,7 @@ export function App() {
                 );
               })()}
             <p className="small">
-              Copy subscripts: ₀ ₁ ₂ ₃ ₄ ₅ ₑ ₛ ₚ · Superscripts: ⁰ ¹ ² ³
+              copy subscripts: ₀ ₁ ₂ ₃ ₄ ₅ ₑ ₛ ₚ · superscripts: ⁰ ¹ ² ³
             </p>
           </Section>
           <Section title="Curves">
@@ -768,11 +815,13 @@ export function App() {
                     value={!!o.dash}
                     onChange={(dash) => editCurve(c.id, { dash })}
                   />
-                  <Toggle
-                    label="Show equation"
-                    value={!!o.equation}
-                    onChange={(equation) => editCurve(c.id, { equation })}
-                  />
+                  {!c.path && (
+                    <Toggle
+                      label="show equation"
+                      value={!!o.equation}
+                      onChange={(equation) => editCurve(c.id, { equation })}
+                    />
+                  )}
                   <Num
                     label="Curve width"
                     value={o.width || p.line}
@@ -783,31 +832,50 @@ export function App() {
                   />
                   {p.extraCurves.some((e) => e.id === c.id) && (
                     <>
-                      <Num
-                        label="Custom intercept"
-                        value={c.a}
-                        onChange={(a) =>
-                          patch({
-                            extraCurves: p.extraCurves.map((e) =>
-                              e.id === c.id ? { ...e, a } : e,
-                            ),
-                          })
-                        }
-                      />
-                      <Num
-                        label="Custom slope"
-                        value={c.b}
-                        min={-5}
-                        max={5}
-                        step={0.05}
-                        onChange={(b) =>
-                          patch({
-                            extraCurves: p.extraCurves.map((e) =>
-                              e.id === c.id ? { ...e, b } : e,
-                            ),
-                          })
-                        }
-                      />
+                      {c.vertical === undefined && !c.path && (
+                        <>
+                          <Num
+                            label="Custom intercept"
+                            value={c.a}
+                            onChange={(a) =>
+                              patch({
+                                extraCurves: p.extraCurves.map((e) =>
+                                  e.id === c.id ? { ...e, a } : e,
+                                ),
+                              })
+                            }
+                          />
+                          <Num
+                            label="Custom slope"
+                            value={c.b}
+                            min={-5}
+                            max={5}
+                            step={0.05}
+                            onChange={(b) =>
+                              patch({
+                                extraCurves: p.extraCurves.map((e) =>
+                                  e.id === c.id ? { ...e, b } : e,
+                                ),
+                              })
+                            }
+                          />
+                        </>
+                      )}
+                      {c.vertical !== undefined && (
+                        <Num
+                          label="Horizontal position"
+                          value={c.vertical}
+                          min={0}
+                          max={p.xMax}
+                          onChange={(vertical) =>
+                            patch({
+                              extraCurves: p.extraCurves.map((e) =>
+                                e.id === c.id ? { ...e, vertical } : e,
+                              ),
+                            })
+                          }
+                        />
+                      )}
                       <button
                         onClick={() =>
                           patch({
@@ -831,6 +899,16 @@ export function App() {
                             a: c.a + 10,
                             b: c.b,
                             label: c.label + "′",
+                            ...(c.vertical !== undefined
+                              ? { vertical: c.vertical + 10 }
+                              : {}),
+                            ...(c.path
+                              ? {
+                                  path: c.path.map(
+                                    ([x, y]): [number, number] => [x, y + 10],
+                                  ),
+                                }
+                              : {}),
                           },
                         ],
                       })
@@ -842,13 +920,13 @@ export function App() {
               );
             })}
             <p className="small">
-              Duplicated curves are annotations; they do not change the
-              template’s calculated equilibria.
+              duplicate a curve to add a reference line. these copies do not
+              change the calculated equilibrium.
             </p>
           </Section>
           <Section title="Shading">
             <Toggle
-              label="Show economic regions"
+              label="show economic regions"
               value={p.shade}
               onChange={(shade) => patch({ shade })}
             />
@@ -889,7 +967,7 @@ export function App() {
             })}
             {!m.regions.length && (
               <p className="small">
-                This template has no shaded welfare regions.
+                there are no shaded regions in this diagram.
               </p>
             )}
           </Section>
@@ -975,7 +1053,7 @@ export function App() {
                     +scale,
                     p.transparent,
                   );
-                  setMessage("Diagram downloaded.");
+                  setMessage("diagram downloaded.");
                 } catch (e) {
                   setMessage((e as Error).message);
                 } finally {
@@ -986,7 +1064,9 @@ export function App() {
               {busy ? "Preparing…" : "↓  Download Diagram"}
             </button>
             <p className="small" role="status">
-              {message || "Edits are saved automatically in this browser."}
+              {(
+                message || "edits are saved automatically in this browser."
+              ).toLowerCase()}
             </p>
           </div>
         </aside>

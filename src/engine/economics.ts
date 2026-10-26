@@ -6,6 +6,8 @@ export type Curve = {
   b: number;
   label: string;
   color: string;
+  path?: [number, number][];
+  vertical?: number;
 };
 export type Region = {
   id: string;
@@ -20,13 +22,32 @@ export type AxisPoint = {
   label: string;
   point?: Point;
 };
-export const value = (c: Curve, x: number) => c.a + c.b * x;
+export function value(c: Curve, x: number): number {
+  if (!c.path) return c.a + c.b * x;
+  const pts = c.path;
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1],
+      [x1, y1] = pts[i];
+    if (x >= x0 && x <= x1 && x1 > x0)
+      return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0);
+  }
+  return NaN;
+}
 export function intersect(u: Curve, v: Curve): { x: number; y: number } | null {
   if (Math.abs(u.b - v.b) < 1e-9) return null;
   const x = (v.a - u.a) / (u.b - v.b);
   return { x, y: value(u, x) };
 }
-export function build(p: Project) {
+export type Model = {
+  curves: Curve[];
+  points: Point[];
+  regions: Region[];
+  axis: AxisPoint[];
+  warnings: string[];
+  notes: string[];
+};
+export function build(p: Project): Model {
+  if (["ppc", "money", "adas"].includes(p.template)) return buildSpecial(p);
   const curves: Curve[] = [
     { id: "demand", a: p.a, b: -p.b, label: "D", color: "#D46A00" },
     { id: "supply", a: p.c, b: p.d, label: "S", color: "#0877D1" },
@@ -327,7 +348,14 @@ export function build(p: Project) {
           "The controlled price is outside the interior range of this linear model.",
         );
       else {
-        point("qs", qs, p.price, "", "Qₛ", "Pᶜ");
+        point(
+          "qs",
+          qs,
+          p.price,
+          "",
+          "Qₛ",
+          p.control === "ceiling" ? "Pᶜ" : "Pᶠ",
+        );
         point("qd", qd, p.price, "", "Qd");
         notes.push(
           `${p.control === "ceiling" ? "Shortage" : "Surplus"}: ${Math.abs(qd - qs).toFixed(2)} model units`,
@@ -344,7 +372,6 @@ export function build(p: Project) {
   });
   return { curves, points, regions, axis, warnings, notes };
 }
-export type Model = ReturnType<typeof build>;
 export function resolveItem(
   item: Item,
   m: Model,
@@ -355,11 +382,63 @@ export function resolveItem(
   }
   if (item.curve) {
     const c = m.curves.find((c) => c.id === item.curve);
-    return c ? { x: item.x, y: value(c, item.x) } : null;
+    if (!c) return null;
+    if (c.vertical !== undefined) return { x: c.vertical, y: item.y };
+    // A point on the vertical Keynesian segment keeps its chosen height.
+    if (c.path && item.x >= c.path[c.path.length - 1][0]) {
+      const last = c.path[c.path.length - 1],
+        before = c.path[c.path.length - 2];
+      if (last[0] === before[0])
+        return { x: last[0], y: Math.max(before[1], item.y) };
+    }
+    const y = value(c, item.x);
+    return Number.isFinite(y) ? { x: item.x, y } : null;
   }
   return { x: item.x, y: item.y };
 }
 export function clipCurve(c: Curve, xMax: number, yMax: number) {
+  if (c.vertical !== undefined)
+    return c.vertical >= 0 && c.vertical <= xMax
+      ? [
+          [c.vertical, 0],
+          [c.vertical, yMax],
+        ]
+      : [];
+  if (c.path) {
+    const result: number[][] = [];
+    for (let i = 1; i < c.path.length; i++) {
+      const [x, y] = c.path[i - 1],
+        dx = c.path[i][0] - x,
+        dy = c.path[i][1] - y;
+      let lo = 0,
+        hi = 1;
+      const edges = [
+        [-dx, x],
+        [dx, xMax - x],
+        [-dy, y],
+        [dy, yMax - y],
+      ];
+      let outside = false;
+      for (const [direction, distance] of edges) {
+        if (direction === 0) {
+          if (distance < 0) outside = true;
+        } else if (direction < 0) lo = Math.max(lo, distance / direction);
+        else hi = Math.min(hi, distance / direction);
+      }
+      if (!outside && lo <= hi) {
+        for (const t of [lo, hi]) {
+          const pt = [x + t * dx, y + t * dy],
+            previous = result[result.length - 1];
+          if (
+            !previous ||
+            Math.hypot(pt[0] - previous[0], pt[1] - previous[1]) > 1e-8
+          )
+            result.push(pt);
+        }
+      }
+    }
+    return result;
+  }
   const candidates = [
     [0, c.a],
     [xMax, value(c, xMax)],
@@ -377,4 +456,205 @@ export function clipCurve(c: Curve, xMax: number, yMax: number) {
         ) === i,
     )
     .sort((a, b) => a[0] - b[0]);
+}
+
+function buildSpecial(p: Project): Model {
+  const m: Model = {
+    curves: [],
+    points: [],
+    regions: [],
+    axis: [],
+    warnings: [],
+    notes: [],
+  };
+  const point = (
+    id: string,
+    x: number,
+    y: number,
+    label: string,
+    xl: string,
+    yl: string,
+  ) => {
+    const pt = { id, x, y, label };
+    m.points.push(pt);
+    m.axis.push({ id: id + "-x", axis: "x", value: x, label: xl, point: pt });
+    m.axis.push({ id: id + "-y", axis: "y", value: y, label: yl, point: pt });
+  };
+  const curve = (
+    id: string,
+    a: number,
+    b: number,
+    label: string,
+    color: string,
+    shape: Partial<Curve> = {},
+  ) => {
+    const c = { id, a, b, label, color, ...shape };
+    m.curves.push(c);
+    return c;
+  };
+  const orange = "#D46A00",
+    blue = "#0877D1";
+  if (p.template === "ppc") {
+    const frontier = (factor: number): [number, number][] =>
+      p.ppcShape === "straight"
+        ? [
+            [0, p.capacityY * factor],
+            [p.capacityX * factor, 0],
+          ]
+        : Array.from({ length: 121 }, (_, i) => {
+            const angle = (i * Math.PI) / 240;
+            return [
+              p.capacityX * factor * Math.sin(angle),
+              p.capacityY * factor * Math.cos(angle),
+            ];
+          });
+    const base = curve(
+      "ppc",
+      p.capacityY,
+      -p.capacityY / p.capacityX,
+      "PPC₁",
+      blue,
+      { path: frontier(1) },
+    );
+    const x = p.capacityX * p.productionShare;
+    point("production", x, value(base, x), "A", "X₁", "Y₁");
+    m.regions.push({
+      id: "feasible",
+      label: "Attainable Production",
+      points: [[0, 0], ...base.path!],
+      color: blue,
+    });
+    if (p.showShift) {
+      const factor = 1 + p.ppcGrowth / 100;
+      const shifted = curve(
+        "ppc2",
+        p.capacityY * factor,
+        base.b,
+        "PPC₂",
+        orange,
+        { path: frontier(factor) },
+      );
+      const nx = x * factor;
+      if (Math.abs(factor - 1) > 1e-8)
+        point("production2", nx, value(shifted, nx), "B", "X₂", "Y₂");
+    }
+  } else if (p.template === "money") {
+    curve("money-demand", p.a, -p.b, "MD₁", orange);
+    curve("money-supply", 0, 0, "MS₁", blue, { vertical: p.moneySupply });
+    point("eq", p.moneySupply, p.a - p.b * p.moneySupply, "E₁", "M₁", "IR₁");
+    if (p.showShift) {
+      const quantity = Math.max(0, p.moneySupply + p.shiftS);
+      if (p.moneySupply + p.shiftS < 0)
+        m.warnings.push(
+          "money supply cannot be negative; the shifted supply is set to zero.",
+        );
+      if (p.shiftD) curve("money-demand2", p.a + p.shiftD, -p.b, "MD₂", orange);
+      if (p.shiftS)
+        curve("money-supply2", 0, 0, "MS₂", blue, { vertical: quantity });
+      if (p.shiftD || p.shiftS)
+        point(
+          "eq2",
+          quantity,
+          p.a + p.shiftD - p.b * quantity,
+          "E₂",
+          "M₂",
+          "IR₂",
+        );
+    }
+    if (m.points.some((pt) => pt.y < 0))
+      m.warnings.push(
+        "these settings imply a negative interest rate. adjust money demand or supply to bring the intersection into view.",
+      );
+  } else {
+    const yf = p.fullEmployment;
+    curve("ad", p.a, -p.b, "AD₁", orange);
+    // The Keynesian curve has horizontal, rising and vertical sections.
+    // Intersections are solved against the actual section being drawn.
+    const solveKeynesian = (intercept: number, supplyShift: number) => {
+      const knee = yf * p.keynesianKnee,
+        floor = p.keynesianFloor + supplyShift;
+      const slope = p.keynesianRise / (yf - knee),
+        top = floor + p.keynesianRise;
+      const horizontalX = (intercept - floor) / p.b;
+      if (horizontalX <= knee) return { x: horizontalX, y: floor };
+      const risingX = (intercept - floor + slope * knee) / (p.b + slope);
+      if (risingX <= yf)
+        return { x: risingX, y: floor + slope * (risingX - knee) };
+      return { x: yf, y: Math.max(top, intercept - p.b * yf) };
+    };
+    const addSupply = (id: string, shift: number, label: string) => {
+      if (p.adasModel === "monetarist")
+        return curve(id, p.c + shift, p.d, label, blue);
+      const floor = p.keynesianFloor + shift,
+        top = floor + p.keynesianRise;
+      return curve(id, floor, 0, label, blue, {
+        path: [
+          [0, floor],
+          [yf * p.keynesianKnee, floor],
+          [yf, top],
+          [yf, Math.max(p.yMax, top + 10)],
+        ],
+      });
+    };
+    addSupply("as", 0, p.adasModel === "keynesian" ? "AS₁" : "SRAS₁");
+    if (p.adasModel === "monetarist")
+      curve("lras", 0, 0, "LRAS", "#59634E", { vertical: yf });
+    const equilibrium = (ad: number, shift: number) =>
+      p.adasModel === "keynesian"
+        ? solveKeynesian(ad, shift)
+        : {
+            x: (ad - p.c - shift) / (p.b + p.d),
+            y: (ad * p.d + (p.c + shift) * p.b) / (p.b + p.d),
+          };
+    const e = equilibrium(p.a, 0);
+    point(
+      "eq",
+      e.x,
+      e.y,
+      "E₁",
+      Math.abs(e.x - yf) < 1e-8 ? "Y₁ = Yf" : "Y₁",
+      "PL₁",
+    );
+    let shiftedAtFull = false;
+    if (p.showShift && (p.shiftD || p.shiftS)) {
+      if (p.shiftD) curve("ad2", p.a + p.shiftD, -p.b, "AD₂", orange);
+      if (p.shiftS)
+        addSupply(
+          "as2",
+          p.shiftS,
+          p.adasModel === "keynesian" ? "AS₂" : "SRAS₂",
+        );
+      const e2 = equilibrium(p.a + p.shiftD, p.shiftS);
+      shiftedAtFull = Math.abs(e2.x - yf) < 1e-8;
+      point("eq2", e2.x, e2.y, "E₂", shiftedAtFull ? "Y₂ = Yf" : "Y₂", "PL₂");
+    }
+    if (Math.abs(e.x - yf) > 1e-8 && !shiftedAtFull)
+      m.axis.push({
+        id: "full-employment",
+        axis: "x",
+        value: yf,
+        label: "Yf",
+        point: { id: "capacity", x: yf, y: 0, label: "" },
+      });
+  }
+  // Share a label when two model points project onto exactly the same coordinate.
+  m.axis = m.axis.reduce<AxisPoint[]>((items, a) => {
+    const same = items.find(
+      (b) => b.axis === a.axis && Math.abs(b.value - a.value) < 1e-8,
+    );
+    if (same)
+      same.label = [
+        ...new Set([...same.label.split(" = "), ...a.label.split(" = ")]),
+      ].join(" = ");
+    else items.push({ ...a });
+    return items;
+  }, []);
+  p.extraCurves.forEach((c) => m.curves.push({ ...c, color: "#9333EA" }));
+  m.points.forEach((pt) => {
+    if (pt.x < 0 || pt.y < 0 || pt.x > p.xMax || pt.y > p.yMax)
+      m.warnings.push(
+        `${pt.label} is outside the graph. adjust the model or increase the axis range.`,
+      );
+  });
+  return m;
 }
