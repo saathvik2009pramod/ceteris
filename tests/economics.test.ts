@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { preset, parseProject, newItem } from "../src/models/project.ts";
-import { build, intersect, resolveItem } from "../src/engine/economics.ts";
+import { build, intersect, resolveItem, value } from "../src/engine/economics.ts";
 const close = (a: number, b: number) =>
   assert.ok(Math.abs(a - b) < 1e-7, `${a} != ${b}`);
 test("equilibrium solves both market equations", () => {
@@ -226,12 +226,10 @@ test("Keynesian equilibrium follows horizontal, rising and vertical AS sections"
       assert.ok(
         e.x > p.fullEmployment * p.keynesianKnee && e.x < p.fullEmployment,
       );
-      close(
-        e.y,
-        p.keynesianFloor +
-          (p.keynesianRise * (e.x - p.fullEmployment * p.keynesianKnee)) /
-            (p.fullEmployment * (1 - p.keynesianKnee)),
-      );
+      close(e.y, value(m.curves.find(c => c.id === "as")!, e.x));
+      const nx = (e.x - p.fullEmployment * p.keynesianKnee) / (p.fullEmployment * (1-p.keynesianKnee));
+      const ny = (e.y - p.keynesianFloor) / p.keynesianRise;
+      assert.ok(Math.abs(nx * nx + (1-ny) * (1-ny) - 1) < 0.0001);
     }
     if (a === 160) close(e.x, p.fullEmployment);
   }
@@ -247,13 +245,7 @@ test("Keynesian supply and demand shifts recompute the intersection", () => {
   const m = build(p),
     e = m.points[1];
   close(e.y, p.a + p.shiftD - p.b * e.x);
-  close(
-    e.y,
-    p.keynesianFloor +
-      p.shiftS +
-      (p.keynesianRise * (e.x - p.fullEmployment * p.keynesianKnee)) /
-        (p.fullEmployment * (1 - p.keynesianKnee)),
-  );
+  close(e.y, value(m.curves.find(c => c.id === "as2")!, e.x));
 });
 test("vertical and piecewise curves clip to the plot without invalid coordinates", async () => {
   const { clipCurve } = await import("../src/engine/economics.ts");
@@ -300,4 +292,15 @@ test("new model settings round-trip and old saves receive their defaults", () =>
   const restored = parseProject(JSON.stringify(p));
   assert.equal(restored.adasModel, "monetarist");
   assert.equal(restored.ppcShape, "bowed");
+});
+
+test("Keynesian bend joins the flat and vertical sections smoothly", () => {
+ const p = { ...preset("adas"), adasModel: "keynesian" as const };
+ const pts = build(p).curves.find(c => c.id === "as")!.path!;
+ assert.ok(pts.length > 100);
+ const slopes = pts.slice(2, -1).map((pt, i) => (pt[1]-pts[i+1][1])/(pt[0]-pts[i+1][0]));
+ assert.ok(slopes[0] < 0.01);
+ assert.ok(slopes.at(-1)! > 100);
+ assert.ok(slopes.every((v,i) => i===0 || v > slopes[i-1]));
+ close(pts.at(-2)![0], p.fullEmployment);
 });

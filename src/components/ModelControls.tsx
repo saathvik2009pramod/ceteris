@@ -200,7 +200,7 @@ export function ModelControls({
             {p.template === "money"
               ? "change the money supply to move the vertical supply curve. the interest rate follows its intersection with money demand."
               : p.adasModel === "keynesian"
-                ? "adjust demand to move the intersection through the horizontal, rising and full-employment sections."
+                ? "adjust demand to move the intersection through the flat section, smooth bend and full-employment section."
                 : "the vertical curve marks full-employment output. demand and short-run supply determine the current equilibrium."}
           </p>
         </>

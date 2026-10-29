@@ -568,33 +568,34 @@ function buildSpecial(p: Project): Model {
   } else {
     const yf = p.fullEmployment;
     curve("ad", p.a, -p.b, "AD₁", orange);
-    // The Keynesian curve has horizontal, rising and vertical sections.
-    // Intersections are solved against the actual section being drawn.
+    // A quarter ellipse joins a flat section to the full-employment vertical.
+    // Use the same sampled geometry for drawing and solving intersections.
+    const keynesianPath = (shift: number): [number, number][] => {
+      const knee = yf * p.keynesianKnee, floor = p.keynesianFloor + shift;
+      const pts: [number, number][] = [[0, floor]];
+      for (let i = 0; i <= 180; i++) {
+        const angle = i * Math.PI / 360;
+        pts.push([knee + (yf - knee) * Math.sin(angle), floor + p.keynesianRise * (1 - Math.cos(angle))]);
+      }
+      pts.push([yf, Math.max(p.yMax, floor + p.keynesianRise + 10)]);
+      return pts;
+    };
     const solveKeynesian = (intercept: number, supplyShift: number) => {
-      const knee = yf * p.keynesianKnee,
-        floor = p.keynesianFloor + supplyShift;
-      const slope = p.keynesianRise / (yf - knee),
-        top = floor + p.keynesianRise;
-      const horizontalX = (intercept - floor) / p.b;
-      if (horizontalX <= knee) return { x: horizontalX, y: floor };
-      const risingX = (intercept - floor + slope * knee) / (p.b + slope);
-      if (risingX <= yf)
-        return { x: risingX, y: floor + slope * (risingX - knee) };
-      return { x: yf, y: Math.max(top, intercept - p.b * yf) };
+      const pts = keynesianPath(supplyShift);
+      if (intercept < pts[0][1]) return { x: (intercept - pts[0][1]) / p.b, y: pts[0][1] };
+      for (let i = 1; i < pts.length; i++) {
+        const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+        const r0 = intercept - p.b * x0 - y0, r1 = intercept - p.b * x1 - y1;
+        if (r0 >= 0 && r1 <= 0) {
+          const t = r0 / (r0 - r1);
+          return { x: x0 + t * (x1 - x0), y: y0 + t * (y1 - y0) };
+        }
+      }
+      return { x: yf, y: intercept - p.b * yf };
     };
     const addSupply = (id: string, shift: number, label: string) => {
-      if (p.adasModel === "monetarist")
-        return curve(id, p.c + shift, p.d, label, blue);
-      const floor = p.keynesianFloor + shift,
-        top = floor + p.keynesianRise;
-      return curve(id, floor, 0, label, blue, {
-        path: [
-          [0, floor],
-          [yf * p.keynesianKnee, floor],
-          [yf, top],
-          [yf, Math.max(p.yMax, top + 10)],
-        ],
-      });
+      if (p.adasModel === "monetarist") return curve(id, p.c + shift, p.d, label, blue);
+      return curve(id, p.keynesianFloor + shift, 0, label, blue, { path: keynesianPath(shift) });
     };
     addSupply("as", 0, p.adasModel === "keynesian" ? "AS₁" : "SRAS₁");
     if (p.adasModel === "monetarist")
